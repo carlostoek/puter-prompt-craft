@@ -205,6 +205,8 @@ function needsReview(metadata) {
  * User only enters prompt content, AI extracts title, description, and all metadata
  */
 async function extractAllWithAI(content) {
+  console.log('🤖 [extractAllWithAI] Starting extraction for:', content.substring(0, 50) + '...');
+  
   const systemPrompt = `You are a metadata extraction AI. Analyze this prompt and return ONLY valid JSON.
 NO markdown, NO explanations, NO code blocks. Just raw JSON.
 
@@ -226,13 +228,18 @@ ${content}
 
 Remember: Return ONLY JSON, no other text.`;
 
-  const response = await puter.ai.chat(systemPrompt);
-  
   try {
+    console.log('🔄 [extractAllWithAI] Calling Puter.AI...');
+    const response = await puter.ai.chat(systemPrompt);
+    console.log('✅ [extractAllWithAI] Puter.AI responded:', response.substring(0, 200));
+
     const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    console.log('🧹 [extractAllWithAI] Cleaned response:', cleaned.substring(0, 200));
     
-    return {
+    const parsed = JSON.parse(cleaned);
+    console.log('✅ [extractAllWithAI] Parsed JSON:', parsed);
+
+    const result = {
       title: parsed.title || content.substring(0, 50) + '...',
       description: parsed.description || '',
       metadata: {
@@ -243,8 +250,12 @@ Remember: Return ONLY JSON, no other text.`;
         attributes: parsed.attributes || {}
       }
     };
+    
+    console.log('✅ [extractAllWithAI] Final result:', result);
+    return result;
   } catch (e) {
-    console.warn('AI extraction failed, using fallback');
+    console.error('❌ [extractAllWithAI] ERROR:', e);
+    console.warn('⚠️ [extractAllWithAI] Using fallback due to error');
     return {
       title: content.substring(0, 50) + '...',
       description: '',
@@ -649,14 +660,18 @@ async function savePrompt() {
     return;
   }
 
+  console.log('💾 [savePrompt] Starting save for content:', content.substring(0, 50) + '...');
+  
   showLoading();
   try {
     // AI extracts EVERYTHING: title, description, metadata
+    console.log('🔄 [savePrompt] Calling extractAllWithAI...');
     const extracted = await extractAllWithAI(content);
-    
+    console.log('✅ [savePrompt] Extracted data:', extracted);
+
     // Use extracted data (user can review/edit via metadata section if needed)
     // currentMetadata is already set from extraction for form display
-    
+
     const prompt = {
       schemaVersion: 2,
       id: editingPromptId || generateUniqueId(),
@@ -669,6 +684,8 @@ async function savePrompt() {
       usage_count: editingPromptId ? (prompts.find(p => p.id === editingPromptId)?.usage_count || 0) : 0
     };
 
+    console.log('💾 [savePrompt] Final prompt object:', prompt);
+
     // Validate before save (defense in depth)
     prompt.metadata = validateAndRepair(prompt.metadata);
 
@@ -680,14 +697,16 @@ async function savePrompt() {
       prompts.unshift(prompt);
     }
 
+    console.log('💾 [savePrompt] Saving to Puter.kv...');
     await puter.kv.set('prompts', JSON.stringify(prompts));
+    console.log('✅ [savePrompt] Saved successfully!');
 
     hidePromptModal();
     renderPrompts();
     renderTagFilters();
     showToast('Prompt saved successfully!', 'success');
   } catch (error) {
-    console.error('Error saving prompt:', error);
+    console.error('❌ [savePrompt] ERROR:', error);
     showToast('Error saving prompt. Please try again.', 'error');
   } finally {
     hideLoading();
