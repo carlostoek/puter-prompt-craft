@@ -22,7 +22,19 @@
 
         <main class="main">
             <div class="toolbar">
-                <input type="text" class="search-box" placeholder="Search prompts...">
+                <div class="toolbar-left">
+                    <input type="text" class="search-box" placeholder="Search prompts..." id="searchInput">
+                    <div class="filters">
+                        <select id="filterType" class="filter-select">
+                            <option value="">All Types</option>
+                            <option value="image">📷 Image</option>
+                            <option value="video">🎬 Video</option>
+                            <option value="code">💻 Code</option>
+                            <option value="uncategorized">❓ Uncategorized</option>
+                        </select>
+                        <div id="tagFilters" class="tag-filters"></div>
+                    </div>
+                </div>
                 <button class="btn btn-primary" onclick="showAddPromptModal()">New Prompt</button>
             </div>
             <div class="prompts-grid" id="promptsGrid"></div>
@@ -35,7 +47,7 @@
             <div class="modal-header">
                 <div class="modal-title" id="modalTitle">Create New Prompt</div>
             </div>
-            
+
             <div class="form-group">
                 <label class="form-label">Title</label>
                 <input type="text" class="form-control" id="promptTitle" placeholder="Enter prompt title">
@@ -51,27 +63,47 @@
                 <textarea class="form-control" id="promptContent" rows="5" placeholder="Enter your prompt"></textarea>
             </div>
 
-            <div class="form-group">
-                <label class="form-label">Category</label>
-                <select class="form-control" id="promptCategory">
-                    <option value="coding">Coding</option>
-                    <option value="writing">Writing</option>
-                    <option value="analysis">Analysis</option>
-                    <option value="creative">Creative</option>
-                    <option value="business">Business</option>
-                    <option value="academic">Academic</option>
-                </select>
-            </div>
+            <!-- Metadata Extraction Section (Task 1.6) -->
+            <div class="metadata-extraction" id="metadataExtraction">
+                <div class="extraction-header">
+                    <span class="extraction-title">🤖 AI Metadata</span>
+                    <button class="btn btn-secondary btn-small" onclick="extractMetadata()">Extract Metadata</button>
+                </div>
 
-            <div class="ai-improvement" id="aiImprovement">
-                <div class="ai-improvement-title">AI Improved Version</div>
-                <div id="aiImprovedContent"></div>
-                <button class="btn btn-primary" onclick="applyImprovement()" style="margin-top: 1rem">Apply Improvement</button>
+                <div class="confidence-bar">
+                    <span id="confidenceIndicator" class="confidence-indicator">—</span>
+                    <span id="reviewWarning" class="needs-review-badge" style="display: none;">⚠ Needs Review</span>
+                </div>
+
+                <div class="metadata-fields">
+                    <div class="form-row">
+                        <select id="metaType" class="form-control">
+                            <option value="image">📷 Image</option>
+                            <option value="video">🎬 Video</option>
+                            <option value="code">💻 Code</option>
+                            <option value="uncategorized">❓ Uncategorized</option>
+                        </select>
+
+                        <select id="metaSubtype" class="form-control">
+                            <!-- Dynamically populated based on type -->
+                        </select>
+                    </div>
+
+                    <input type="text" class="form-control" id="metaTags" placeholder="Tags (comma-separated, max 8)" />
+
+                    <details class="metadata-advanced">
+                        <summary>Advanced Attributes</summary>
+                        <div id="attributesContainer">
+                            <p style="color: var(--text-secondary); font-size: 0.875rem;">No attributes extracted</p>
+                        </div>
+                    </details>
+                </div>
+
+                <button class="btn btn-secondary" onclick="clearMetadata()">Clear Metadata</button>
             </div>
 
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="hidePromptModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="improveWithAI()">Improve with AI</button>
                 <button class="btn btn-primary" onclick="savePrompt()">Save Prompt</button>
             </div>
         </div>
