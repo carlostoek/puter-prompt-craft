@@ -398,13 +398,25 @@ body {
     gap: 1rem;
 }
 
-/* Metadata Extraction Section (Task 1.6) */
+/* Metadata Extraction Section (Zero-Friction UX) */
 .metadata-extraction {
     background: var(--bg-elevated);
     border: 1px solid var(--border-light);
     border-radius: 12px;
     padding: 1.5rem;
     margin: 1.5rem 0;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .extraction-header {
@@ -417,6 +429,9 @@ body {
 .extraction-title {
     font-weight: 600;
     color: var(--accent-main);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .confidence-bar {
@@ -424,6 +439,7 @@ body {
     gap: 0.75rem;
     align-items: center;
     margin-bottom: 1rem;
+    min-height: 28px;
 }
 
 .confidence-indicator {
@@ -431,6 +447,7 @@ body {
     border-radius: 6px;
     font-size: 0.8125rem;
     font-weight: 600;
+    transition: all 0.2s ease;
 }
 
 .confidence-high {
@@ -455,6 +472,16 @@ body {
     border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 600;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
 }
 
 .metadata-fields {
@@ -476,6 +503,11 @@ body {
     font-weight: 600;
     color: var(--text-secondary);
     margin-bottom: 0.75rem;
+    transition: color 0.2s ease;
+}
+
+.metadata-advanced summary:hover {
+    color: var(--text-primary);
 }
 
 .attribute-row {

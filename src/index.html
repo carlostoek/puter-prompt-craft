@@ -48,30 +48,20 @@
                 <div class="modal-title" id="modalTitle">Create New Prompt</div>
             </div>
 
+            <!-- Single Input Field: Prompt Content -->
             <div class="form-group">
-                <label class="form-label">Title</label>
-                <input type="text" class="form-control" id="promptTitle" placeholder="Enter prompt title">
+                <label class="form-label">Prompt Content *</label>
+                <textarea class="form-control" id="promptContent" rows="8" placeholder="Enter your prompt here..."></textarea>
             </div>
 
-            <div class="form-group">
-                <label class="form-label">Description</label>
-                <textarea class="form-control" id="promptDescription" rows="2" placeholder="Enter brief description"></textarea>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Prompt Content</label>
-                <textarea class="form-control" id="promptContent" rows="5" placeholder="Enter your prompt"></textarea>
-            </div>
-
-            <!-- Metadata Extraction Section (Task 1.6) -->
-            <div class="metadata-extraction" id="metadataExtraction">
+            <!-- Metadata Extraction Section (Auto-extracted) -->
+            <div class="metadata-extraction" id="metadataExtraction" style="display: none;">
                 <div class="extraction-header">
-                    <span class="extraction-title">🤖 AI Metadata</span>
-                    <button class="btn btn-secondary btn-small" onclick="extractMetadata()">Extract Metadata</button>
-                </div>
-
-                <div class="confidence-bar">
+                    <span class="extraction-title">🤖 AI Metadata (Auto-extracted)</span>
                     <span id="confidenceIndicator" class="confidence-indicator">—</span>
+                </div>
+                
+                <div class="confidence-bar">
                     <span id="reviewWarning" class="needs-review-badge" style="display: none;">⚠ Needs Review</span>
                 </div>
 
@@ -85,7 +75,7 @@
                         </select>
 
                         <select id="metaSubtype" class="form-control">
-                            <!-- Dynamically populated based on type -->
+                            <!-- Dynamically populated -->
                         </select>
                     </div>
 
@@ -93,9 +83,7 @@
 
                     <details class="metadata-advanced">
                         <summary>Advanced Attributes</summary>
-                        <div id="attributesContainer">
-                            <p style="color: var(--text-secondary); font-size: 0.875rem;">No attributes extracted</p>
-                        </div>
+                        <div id="attributesContainer"></div>
                     </details>
                 </div>
 

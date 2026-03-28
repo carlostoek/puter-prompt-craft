@@ -197,9 +197,70 @@ function needsReview(metadata) {
 }
 
 // ============================================================================
-// AI EXTRACTION (Task 1.2)
+// AI EXTRACTION - ZERO FRICTION (Task 1.2 + Phase 1 UX Fix)
 // ============================================================================
 
+/**
+ * NEW: Extract ALL metadata from content only (zero-friction UX)
+ * User only enters prompt content, AI extracts title, description, and all metadata
+ */
+async function extractAllWithAI(content) {
+  const systemPrompt = `You are a metadata extraction AI. Analyze this prompt and return ONLY valid JSON.
+NO markdown, NO explanations, NO code blocks. Just raw JSON.
+
+Return this exact structure:
+{
+  "title": "A short, descriptive title (3-6 words)",
+  "description": "A one-sentence description (10-20 words)",
+  "type": "image|video|code|uncategorized",
+  "subtype": "specific subtype from registry or 'other'",
+  "confidence": 0.0-1.0,
+  "tags": ["tag1", "tag2"],
+  "attributes": {
+    "key": "value"
+  }
+}
+
+Prompt to analyze:
+${content}
+
+Remember: Return ONLY JSON, no other text.`;
+
+  const response = await puter.ai.chat(systemPrompt);
+  
+  try {
+    const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    
+    return {
+      title: parsed.title || content.substring(0, 50) + '...',
+      description: parsed.description || '',
+      metadata: {
+        type: parsed.type || 'uncategorized',
+        subtype: parsed.subtype || 'other',
+        confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+        tags: normalizeTags(parsed.tags || []),
+        attributes: parsed.attributes || {}
+      }
+    };
+  } catch (e) {
+    console.warn('AI extraction failed, using fallback');
+    return {
+      title: content.substring(0, 50) + '...',
+      description: '',
+      metadata: {
+        type: 'uncategorized',
+        subtype: 'unknown',
+        confidence: 0,
+        tags: [],
+        attributes: {},
+        needsAIReview: true
+      }
+    };
+  }
+}
+
+// Legacy function for backward compatibility (still used by test suite)
 async function buildAIPrompt(content, title, description) {
   const systemPrompt = `You are a metadata extraction AI. Analyze the prompt and return ONLY valid JSON.
 NO markdown, NO explanations, NO code blocks. Just raw JSON.
@@ -292,6 +353,7 @@ async function extractMetadataWithFallback(content, title, description) {
 // UX FUNCTIONS (Task 1.6)
 // ============================================================================
 
+// Legacy function - kept for backward compatibility
 async function extractMetadata() {
   const content = document.getElementById('promptContent').value;
   const title = document.getElementById('promptTitle').value;
@@ -335,8 +397,8 @@ async function extractMetadata() {
 function updateSubtypeOptions(type) {
   const subtypeSelect = document.getElementById('metaSubtype');
   const subtypes = SUBTYPE_REGISTRY[type] || SUBTYPE_REGISTRY.code;
-  
-  subtypeSelect.innerHTML = subtypes.map(subtype => 
+
+  subtypeSelect.innerHTML = subtypes.map(subtype =>
     `<option value="${subtype}">${subtype}</option>`
   ).join('');
 }
@@ -347,7 +409,7 @@ function updateConfidenceIndicator(confidence) {
 
   const level = getConfidenceLevel(confidence);
   indicator.className = 'confidence-indicator';
-  
+
   if (level === 'high') {
     indicator.classList.add('confidence-high');
     indicator.textContent = `✓ High (${(confidence * 100).toFixed(0)}%)`;
@@ -576,53 +638,35 @@ function generateUniqueId() {
 }
 
 // ============================================================================
-// SAVE FUNCTION (Task 1.7 - CRITICAL)
+// SAVE FUNCTION (Zero-Friction UX - Phase 1 Fix)
 // ============================================================================
 
 async function savePrompt() {
-  const title = document.getElementById('promptTitle').value;
-  const description = document.getElementById('promptDescription').value;
   const content = document.getElementById('promptContent').value;
 
-  if (!title || !content) {
-    showToast('Please fill in title and content', 'error');
+  if (!content) {
+    showToast('Please enter prompt content', 'error');
     return;
   }
 
   showLoading();
   try {
-    // Build metadata from form
-    const type = document.getElementById('metaType').value;
-    const subtype = document.getElementById('metaSubtype').value;
-    const tags = document.getElementById('metaTags').value
-      .split(',')
-      .map(t => normalizeTag(t))
-      .filter(t => t)
-      .slice(0, 8);
-
-    const attributes = collectAttributesFromForm();
-
-    // Build prompt object
+    // AI extracts EVERYTHING: title, description, metadata
+    const extracted = await extractAllWithAI(content);
+    
+    // Use extracted data (user can review/edit via metadata section if needed)
+    // currentMetadata is already set from extraction for form display
+    
     const prompt = {
       schemaVersion: 2,
       id: editingPromptId || generateUniqueId(),
-      title,
-      description,
+      title: extracted.title,
+      description: extracted.description,
       content,
-      metadata: {
-        type,
-        subtype,
-        tags,
-        confidence: currentMetadata?.confidence || 1.0,
-        attributes
-      },
-      created: editingPromptId
-        ? prompts.find(p => p.id === editingPromptId)?.created || new Date().toISOString()
-        : new Date().toISOString(),
+      metadata: validateAndRepair(extracted.metadata),
+      created: editingPromptId ? prompts.find(p => p.id === editingPromptId)?.created : new Date().toISOString(),
       updated: new Date().toISOString(),
-      usage_count: editingPromptId
-        ? (prompts.find(p => p.id === editingPromptId)?.usage_count || 0)
-        : 0
+      usage_count: editingPromptId ? (prompts.find(p => p.id === editingPromptId)?.usage_count || 0) : 0
     };
 
     // Validate before save (defense in depth)
@@ -688,7 +732,7 @@ function renderPrompts(results = null) {
     const metadata = prompt.metadata || {};
     const typeIcon = metadata.type === 'image' ? '📷' : metadata.type === 'video' ? '🎬' : metadata.type === 'code' ? '💻' : '❓';
     const tagsHtml = (metadata.tags || []).map(tag => `<span class="tag-badge">${tag}</span>`).join('');
-    
+
     return `
       <div class="prompt-card">
         <div class="prompt-header">
@@ -739,10 +783,14 @@ function editPrompt(id) {
   currentMetadata = prompt.metadata || null;
 
   document.getElementById('modalTitle').textContent = 'Edit Prompt';
-  document.getElementById('promptTitle').value = prompt.title;
-  document.getElementById('promptDescription').value = prompt.description || '';
   document.getElementById('promptContent').value = prompt.content;
-  
+
+  // Show and populate metadata section for editing
+  const metadataSection = document.getElementById('metadataExtraction');
+  if (metadataSection) {
+    metadataSection.style.display = 'block';
+  }
+
   // Set metadata fields
   const metadata = prompt.metadata || {};
   document.getElementById('metaType').value = metadata.type || 'uncategorized';
@@ -750,13 +798,12 @@ function editPrompt(id) {
   document.getElementById('metaSubtype').value = metadata.subtype || 'other';
   document.getElementById('metaTags').value = (metadata.tags || []).join(', ');
   renderAttributes(metadata.attributes || {});
-  
+
   // Set confidence
   if (metadata.confidence) {
     updateConfidenceIndicator(metadata.confidence);
   }
 
-  document.getElementById('aiImprovement').style.display = 'none';
   document.getElementById('promptModal').style.display = 'flex';
 }
 
@@ -774,15 +821,20 @@ async function copyPrompt(id) {
 }
 
 // ============================================================================
-// MODAL MANAGEMENT
+// MODAL MANAGEMENT (Zero-Friction UX)
 // ============================================================================
 
 function showAddPromptModal() {
   document.getElementById('modalTitle').textContent = 'Create New Prompt';
   document.getElementById('promptModal').style.display = 'flex';
-  document.getElementById('promptTitle').value = '';
-  document.getElementById('promptDescription').value = '';
   document.getElementById('promptContent').value = '';
+  
+  // Hide metadata section initially (will show after AI extraction on save)
+  const metadataSection = document.getElementById('metadataExtraction');
+  if (metadataSection) {
+    metadataSection.style.display = 'none';
+  }
+  
   document.getElementById('metaType').value = 'uncategorized';
   updateSubtypeOptions('uncategorized');
   document.getElementById('metaSubtype').value = 'other';
@@ -850,7 +902,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         e.target.classList.add('active');
         currentCategory = e.target.dataset.category;
-        
+
         // Filter by category (legacy support)
         if (currentCategory === 'all') {
           renderPrompts();
@@ -1025,3 +1077,4 @@ window.validateAndRepair = validateAndRepair;
 window.METADATA_SCHEMA = METADATA_SCHEMA;
 window.SUBTYPE_REGISTRY = SUBTYPE_REGISTRY;
 window.TAG_SYNONYMS = TAG_SYNONYMS;
+window.extractAllWithAI = extractAllWithAI; // NEW: Export for testing
