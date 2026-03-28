@@ -364,33 +364,48 @@ async function extractMetadataWithFallback(content, title, description) {
 // UX FUNCTIONS (Task 1.6)
 // ============================================================================
 
-// Legacy function - kept for backward compatibility
+// ============================================================================
+// METADATA EXTRACTION (Legacy - kept for backward compatibility)
+// Now uses extractAllWithAI internally for consistency
+// ============================================================================
+
 async function extractMetadata() {
   const content = document.getElementById('promptContent').value;
-  const title = document.getElementById('promptTitle').value;
-  const description = document.getElementById('promptDescription').value;
 
   showLoading();
   try {
-    const rawAI = await buildAIPrompt(content, title, description);
-    const normalized = normalizeAIResponse(rawAI);
-    const validated = validateAndRepair(normalized);
-
+    console.log('🔄 [extractMetadata] Starting legacy extraction...');
+    
+    // Use new extractAllWithAI function (works with content only)
+    const extracted = await extractAllWithAI(content);
+    
     // Store for later use
-    currentMetadata = validated;
+    currentMetadata = extracted.metadata;
+
+    // Show metadata section
+    const metadataSection = document.getElementById('metadataExtraction');
+    if (metadataSection) metadataSection.style.display = 'block';
 
     // Auto-apply to form
-    document.getElementById('metaType').value = validated.type;
-    updateSubtypeOptions(validated.type);
-    document.getElementById('metaSubtype').value = validated.subtype;
-    document.getElementById('metaTags').value = validated.tags.join(', ');
-    renderAttributes(validated.attributes);
+    const metaType = document.getElementById('metaType');
+    if (metaType) {
+      metaType.value = extracted.metadata.type;
+      updateSubtypeOptions(extracted.metadata.type);
+    }
+    
+    const metaSubtype = document.getElementById('metaSubtype');
+    if (metaSubtype) metaSubtype.value = extracted.metadata.subtype;
+    
+    const metaTags = document.getElementById('metaTags');
+    if (metaTags) metaTags.value = extracted.metadata.tags.join(', ');
+    
+    renderAttributes(extracted.metadata.attributes);
 
     // Show confidence indicator
-    updateConfidenceIndicator(validated.confidence);
+    updateConfidenceIndicator(extracted.metadata.confidence);
 
     // Show review warning if needed
-    if (needsReview(validated)) {
+    if (needsReview(extracted.metadata)) {
       showReviewWarning();
     } else {
       hideReviewWarning();
@@ -802,7 +817,9 @@ function editPrompt(id) {
   currentMetadata = prompt.metadata || null;
 
   document.getElementById('modalTitle').textContent = 'Edit Prompt';
-  document.getElementById('promptContent').value = prompt.content;
+  
+  const contentEl = document.getElementById('promptContent');
+  if (contentEl) contentEl.value = prompt.content;
 
   // Show and populate metadata section for editing
   const metadataSection = document.getElementById('metadataExtraction');
@@ -812,10 +829,19 @@ function editPrompt(id) {
 
   // Set metadata fields
   const metadata = prompt.metadata || {};
-  document.getElementById('metaType').value = metadata.type || 'uncategorized';
-  updateSubtypeOptions(metadata.type || 'uncategorized');
-  document.getElementById('metaSubtype').value = metadata.subtype || 'other';
-  document.getElementById('metaTags').value = (metadata.tags || []).join(', ');
+  
+  const metaType = document.getElementById('metaType');
+  if (metaType) {
+    metaType.value = metadata.type || 'uncategorized';
+    updateSubtypeOptions(metadata.type || 'uncategorized');
+  }
+  
+  const metaSubtype = document.getElementById('metaSubtype');
+  if (metaSubtype) metaSubtype.value = metadata.subtype || 'other';
+  
+  const metaTags = document.getElementById('metaTags');
+  if (metaTags) metaTags.value = (metadata.tags || []).join(', ');
+  
   renderAttributes(metadata.attributes || {});
 
   // Set confidence
@@ -846,22 +872,32 @@ async function copyPrompt(id) {
 function showAddPromptModal() {
   document.getElementById('modalTitle').textContent = 'Create New Prompt';
   document.getElementById('promptModal').style.display = 'flex';
-  document.getElementById('promptContent').value = '';
   
+  const contentEl = document.getElementById('promptContent');
+  if (contentEl) contentEl.value = '';
+
   // Hide metadata section initially (will show after AI extraction on save)
   const metadataSection = document.getElementById('metadataExtraction');
   if (metadataSection) {
     metadataSection.style.display = 'none';
   }
+
+  const metaType = document.getElementById('metaType');
+  if (metaType) {
+    metaType.value = 'uncategorized';
+    updateSubtypeOptions('uncategorized');
+  }
   
-  document.getElementById('metaType').value = 'uncategorized';
-  updateSubtypeOptions('uncategorized');
-  document.getElementById('metaSubtype').value = 'other';
-  document.getElementById('metaTags').value = '';
-  document.getElementById('attributesContainer').innerHTML = '';
-  document.getElementById('aiImprovement').style.display = 'none';
+  const metaSubtype = document.getElementById('metaSubtype');
+  if (metaSubtype) metaSubtype.value = 'other';
+  
+  const metaTags = document.getElementById('metaTags');
+  if (metaTags) metaTags.value = '';
+  
+  const attrsContainer = document.getElementById('attributesContainer');
+  if (attrsContainer) attrsContainer.innerHTML = '';
+  
   editingPromptId = null;
-  improvedContent = null;
   currentMetadata = null;
   updateConfidenceIndicator(1.0);
   hideReviewWarning();
