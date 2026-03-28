@@ -1,242 +1,1027 @@
-        // State
+// ============================================================================
+// METADATA SCHEMA v2 (Task 1.1)
+// ============================================================================
+
+const METADATA_SCHEMA = {
+  schemaVersion: 2,
+  id: 'string',
+  type: 'image | video | code | uncategorized',
+  subtype: 'string',
+  tags: 'string[]',
+  confidence: 'number (0.0 - 1.0)',
+  attributes: 'object (dynamic key-value pairs)',
+  created: 'ISO8601',
+  updated: 'ISO8601',
+  usage_count: 'number'
+};
+
+const SUBTYPE_REGISTRY = {
+  image: ['portrait', 'landscape', 'product', 'macro', 'street', 'abstract', 'other'],
+  video: ['interview', 'b-roll', 'timelapse', 'tutorial', 'documentary', 'other'],
+  code: ['function', 'class', 'api', 'script', 'component', 'query', 'other']
+};
+
+const TAG_SYNONYMS = {
+  'portrait': ['portrait', 'headshot', 'face', 'person'],
+  'landscape': ['landscape', 'scenery', 'nature', 'outdoor'],
+  'code': ['code', 'programming', 'script', 'development']
+};
+
+// ============================================================================
+// STATE
+// ============================================================================
+
 let prompts = [];
 let currentCategory = 'all';
 let editingPromptId = null;
 let improvedContent = null;
+let currentMetadata = null; // Store current extracted metadata
 
-// Initialize
-async function initApp() {
-    showLoading();
-    try {
-        const storedPrompts = await puter.kv.get('prompts');
-        if (storedPrompts) {
-            prompts = JSON.parse(storedPrompts);
-        }
-        renderPrompts();
-    } catch (error) {
-        console.error('Error initializing app:', error);
-        showToast('Error loading prompts', 'error');
-    } finally {
-        hideLoading();
-    }
+// ============================================================================
+// TAG NORMALIZATION (Task 1.5)
+// ============================================================================
+
+function normalizeTag(tag) {
+  return tag.toLowerCase().trim();
 }
 
-// Render prompts
-function renderPrompts() {
-    const grid = document.getElementById('promptsGrid');
-    if (!grid) {
-        console.error('Error: promptsGrid element not found');
-        return;
-    }
-    
-    const searchTerm = document.querySelector('.search-box').value.toLowerCase();
-    
-    let filtered = prompts;
-    if (currentCategory !== 'all') {
-        filtered = prompts.filter(p => p.category === currentCategory);
-    }
-    if (searchTerm) {
-        filtered = filtered.filter(p => 
-            p.title.toLowerCase().includes(searchTerm) || 
-            p.content.toLowerCase().includes(searchTerm) ||
-            (p.description && p.description.toLowerCase().includes(searchTerm))
-        );
-    }
-
-    grid.innerHTML = filtered.length > 0 ? filtered.map(prompt => `
-        <div class="prompt-card">
-            <div class="prompt-title">${prompt.title}</div>
-            <div class="prompt-description">${prompt.description || ''}</div>
-            <div class="prompt-content">${prompt.content}</div>
-            <div class="card-actions">
-                <button class="btn btn-secondary" onclick="copyPrompt('${prompt.id}')">Copy</button>
-                <button class="btn btn-secondary" onclick="editPrompt('${prompt.id}')">Edit</button>
-                <button class="btn btn-danger" onclick="deletePrompt('${prompt.id}')">Delete</button>
-            </div>
-        </div>
-    `).join('') : '<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">No prompts found</p>';
+function normalizeTags(tags) {
+  if (typeof tags === 'string') {
+    tags = tags.split(',');
+  }
+  return tags
+    .map(tag => normalizeTag(tag))
+    .filter(tag => tag.length > 0)
+    .slice(0, 8); // Max 8 tags
 }
 
-// AI Improvement
-async function improveWithAI() {
-    const title = document.getElementById('promptTitle').value;
-    const description = document.getElementById('promptDescription').value;
-    const content = document.getElementById('promptContent').value;
-    const category = document.getElementById('promptCategory').value;
+function expandTagsWithSynonyms(tags) {
+  const expanded = new Set(tags.map(normalizeTag));
 
-    if (!content) {
-        showToast('Please enter prompt content first', 'error');
-        return;
+  tags.forEach(tag => {
+    const normalized = normalizeTag(tag);
+    Object.entries(TAG_SYNONYMS).forEach(([canonical, synonyms]) => {
+      if (synonyms.includes(normalized)) {
+        expanded.add(canonical);
+      }
+    });
+  });
+
+  return Array.from(expanded).slice(0, 8);
+}
+
+function deduplicateTags(tags) {
+  const seen = new Set();
+  return tags.filter(tag => {
+    const normalized = normalizeTag(tag);
+    if (seen.has(normalized)) {
+      return false;
+    }
+    seen.add(normalized);
+    return true;
+  });
+}
+
+// ============================================================================
+// AI RESPONSE NORMALIZATION (Task 1.3 - CRITICAL)
+// ============================================================================
+
+function normalizeAIResponse(raw) {
+  let parsed;
+
+  // Step 1: Fix invalid JSON (remove markdown code blocks if present)
+  try {
+    const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    console.warn('JSON parse failed, using fallback:', e);
+    return createFallbackMetadata('parse_error');
+  }
+
+  // Step 2: Ensure required fields exist with defaults
+  const normalized = {
+    type: parsed.type || 'uncategorized',
+    subtype: parsed.subtype || 'other',
+    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+    tags: normalizeTags(parsed.tags || []),
+    attributes: parsed.attributes || {}
+  };
+
+  // Step 3: Normalize types
+  normalized.type = normalized.type.toLowerCase();
+  if (!['image', 'video', 'code', 'uncategorized'].includes(normalized.type)) {
+    normalized.type = 'uncategorized';
+  }
+
+  // Step 4: Normalize subtype
+  normalized.subtype = normalized.subtype.toLowerCase().trim();
+
+  // Step 5: Clean attributes (remove null/undefined values)
+  Object.keys(normalized.attributes).forEach(key => {
+    if (normalized.attributes[key] === null || normalized.attributes[key] === undefined) {
+      delete normalized.attributes[key];
+    }
+  });
+
+  return normalized;
+}
+
+function createFallbackMetadata(reason) {
+  console.warn('Using fallback metadata, reason:', reason);
+  return {
+    type: 'uncategorized',
+    subtype: 'unknown',
+    confidence: 0,
+    tags: [],
+    attributes: {},
+    needsAIReview: true
+  };
+}
+
+// ============================================================================
+// VALIDATION & REPAIR LAYER (Task 1.4 - CRITICAL)
+// ============================================================================
+
+function validateAndRepair(metadata) {
+  const repaired = { ...metadata };
+
+  // Enforce type validity
+  const validTypes = ['image', 'video', 'code', 'uncategorized'];
+  if (!validTypes.includes(repaired.type)) {
+    console.warn('Invalid type repaired:', repaired.type);
+    repaired.type = 'uncategorized';
+  }
+
+  // Enforce subtype against registry
+  const validSubtypes = SUBTYPE_REGISTRY[repaired.type] || SUBTYPE_REGISTRY.code;
+  if (!validSubtypes.includes(repaired.subtype)) {
+    console.warn('Invalid subtype repaired:', repaired.subtype);
+    repaired.subtype = 'other';
+  }
+
+  // Enforce tags constraints
+  if (!Array.isArray(repaired.tags)) {
+    repaired.tags = [];
+  }
+  repaired.tags = repaired.tags.slice(0, 8); // Max 8 tags
+
+  // Enforce confidence range
+  if (typeof repaired.confidence !== 'number' || repaired.confidence < 0 || repaired.confidence > 1) {
+    repaired.confidence = 0.5;
+  }
+
+  // Ensure attributes is object
+  if (typeof repaired.attributes !== 'object' || repaired.attributes === null) {
+    repaired.attributes = {};
+  }
+
+  // Remove unknown top-level fields (schema enforcement)
+  const allowedFields = ['type', 'subtype', 'tags', 'confidence', 'attributes'];
+  Object.keys(repaired).forEach(key => {
+    if (!allowedFields.includes(key)) {
+      delete repaired[key];
+    }
+  });
+
+  return repaired;
+}
+
+function getConfidenceLevel(confidence) {
+  if (confidence < 0.4) return 'low';
+  if (confidence < 0.7) return 'medium';
+  return 'high';
+}
+
+function needsReview(metadata) {
+  return metadata.confidence < 0.4 || metadata.needsAIReview === true;
+}
+
+// ============================================================================
+// AI EXTRACTION (Task 1.2)
+// ============================================================================
+
+async function buildAIPrompt(content, title, description) {
+  const systemPrompt = `You are a metadata extraction AI. Analyze the prompt and return ONLY valid JSON.
+NO markdown, NO explanations, NO code blocks. Just raw JSON.
+
+Return this exact structure:
+{
+  "type": "image|video|code|uncategorized",
+  "subtype": "specific subtype from registry or 'other'",
+  "confidence": 0.0-1.0,
+  "tags": ["tag1", "tag2"],
+  "attributes": {
+    "key": "value"
+  }
+}
+
+Prompt to analyze:
+Title: ${title}
+Description: ${description || 'N/A'}
+Content: ${content}
+
+Remember: Return ONLY JSON, no other text.`;
+
+  const response = await puter.ai.chat(systemPrompt);
+  return response;
+}
+
+function detectTypeFromContent(content) {
+  const lower = content.toLowerCase();
+  if (lower.includes('--ar') || lower.includes('photograph') || lower.includes('shot of')) {
+    return 'image';
+  }
+  if (lower.includes('function') || lower.includes('```') || lower.includes('const ') || lower.includes('import ')) {
+    return 'code';
+  }
+  if (lower.includes('video') || lower.includes('footage') || lower.includes('scene')) {
+    return 'video';
+  }
+  return 'uncategorized';
+}
+
+// ============================================================================
+// AI CALL OPTIMIZATION (Task 1.10)
+// ============================================================================
+
+const AI_CACHE = new Map();
+
+function hashPrompt(content) {
+  // Simple hash (for production, use crypto.subtle.digest)
+  let hash = 0;
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return hash.toString();
+}
+
+async function extractMetadataWithCache(content, title, description) {
+  const hash = hashPrompt(content + title + description);
+
+  if (AI_CACHE.has(hash)) {
+    console.log('AI cache hit');
+    return AI_CACHE.get(hash);
+  }
+
+  const result = await extractMetadataWithFallback(content, title, description);
+  AI_CACHE.set(hash, result);
+  return result;
+}
+
+async function extractMetadataWithFallback(content, title, description) {
+  try {
+    const rawAI = await buildAIPrompt(content, title, description);
+    const normalized = normalizeAIResponse(rawAI);
+    return validateAndRepair(normalized);
+  } catch (error) {
+    console.warn('AI extraction failed, using fallback:', error);
+    return {
+      type: 'uncategorized',
+      subtype: 'unknown',
+      confidence: 0,
+      tags: [],
+      attributes: {},
+      needsAIReview: true
+    };
+  }
+}
+
+// ============================================================================
+// UX FUNCTIONS (Task 1.6)
+// ============================================================================
+
+async function extractMetadata() {
+  const content = document.getElementById('promptContent').value;
+  const title = document.getElementById('promptTitle').value;
+  const description = document.getElementById('promptDescription').value;
+
+  showLoading();
+  try {
+    const rawAI = await buildAIPrompt(content, title, description);
+    const normalized = normalizeAIResponse(rawAI);
+    const validated = validateAndRepair(normalized);
+
+    // Store for later use
+    currentMetadata = validated;
+
+    // Auto-apply to form
+    document.getElementById('metaType').value = validated.type;
+    updateSubtypeOptions(validated.type);
+    document.getElementById('metaSubtype').value = validated.subtype;
+    document.getElementById('metaTags').value = validated.tags.join(', ');
+    renderAttributes(validated.attributes);
+
+    // Show confidence indicator
+    updateConfidenceIndicator(validated.confidence);
+
+    // Show review warning if needed
+    if (needsReview(validated)) {
+      showReviewWarning();
+    } else {
+      hideReviewWarning();
     }
 
-    showLoading();
-    try {
-        const aiPrompt = `As an AI prompt expert, please improve the following prompt while maintaining its core purpose.
-            Original prompt: "${content}"
-            Context: This is a ${category} prompt titled "${title}"
-            Description: ${description}
-            
-            Please provide an improved version that is more effective, clearer, and more likely to generate better results.
-            Only return the improved prompt text without any explanations.`;
+    showToast('Metadata extracted', 'success');
+  } catch (error) {
+    console.error('Extraction failed:', error);
+    showToast('AI extraction failed. Enter metadata manually.', 'error');
+  } finally {
+    hideLoading();
+  }
+}
 
-        improvedContent = await puter.ai.chat(aiPrompt);
-        
-        document.getElementById('aiImprovedContent').textContent = improvedContent;
-        document.getElementById('aiImprovement').style.display = 'block';
-        showToast('Prompt improved successfully!', 'success');
-    } catch (error) {
-        console.error('Error improving prompt:', error);
-        showToast('Error improving prompt. Please try again.', 'error');
-    } finally {
-        hideLoading();
+function updateSubtypeOptions(type) {
+  const subtypeSelect = document.getElementById('metaSubtype');
+  const subtypes = SUBTYPE_REGISTRY[type] || SUBTYPE_REGISTRY.code;
+  
+  subtypeSelect.innerHTML = subtypes.map(subtype => 
+    `<option value="${subtype}">${subtype}</option>`
+  ).join('');
+}
+
+function updateConfidenceIndicator(confidence) {
+  const indicator = document.getElementById('confidenceIndicator');
+  if (!indicator) return;
+
+  const level = getConfidenceLevel(confidence);
+  indicator.className = 'confidence-indicator';
+  
+  if (level === 'high') {
+    indicator.classList.add('confidence-high');
+    indicator.textContent = `✓ High (${(confidence * 100).toFixed(0)}%)`;
+  } else if (level === 'medium') {
+    indicator.classList.add('confidence-medium');
+    indicator.textContent = `~ Medium (${(confidence * 100).toFixed(0)}%)`;
+  } else {
+    indicator.classList.add('confidence-low');
+    indicator.textContent = `⚠ Low (${(confidence * 100).toFixed(0)}%)`;
+  }
+}
+
+function showReviewWarning() {
+  const warning = document.getElementById('reviewWarning');
+  if (warning) warning.style.display = 'block';
+}
+
+function hideReviewWarning() {
+  const warning = document.getElementById('reviewWarning');
+  if (warning) warning.style.display = 'none';
+}
+
+function renderAttributes(attributes) {
+  const container = document.getElementById('attributesContainer');
+  if (!container) return;
+
+  const entries = Object.entries(attributes);
+  if (entries.length === 0) {
+    container.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem;">No attributes extracted</p>';
+    return;
+  }
+
+  container.innerHTML = entries.map(([key, value]) => `
+    <div class="attribute-row">
+      <span class="attribute-key">${key}:</span>
+      <span class="attribute-value">${value}</span>
+    </div>
+  `).join('');
+}
+
+function clearMetadata() {
+  document.getElementById('metaType').value = 'uncategorized';
+  updateSubtypeOptions('uncategorized');
+  document.getElementById('metaSubtype').value = 'other';
+  document.getElementById('metaTags').value = '';
+  document.getElementById('attributesContainer').innerHTML = '';
+  currentMetadata = null;
+  updateConfidenceIndicator(1.0); // Manual entry
+  hideReviewWarning();
+  showToast('Metadata cleared', 'success');
+}
+
+function getCurrentConfidence() {
+  return currentMetadata?.confidence || 1.0;
+}
+
+function collectAttributesFromForm() {
+  // For now, return the stored attributes
+  // Future: allow editing attributes in form
+  return currentMetadata?.attributes || {};
+}
+
+// ============================================================================
+// SEARCH & SCORING (Task 1.8)
+// ============================================================================
+
+function scorePrompt(prompt, query) {
+  if (!query || query.trim() === '') {
+    return 1; // Neutral score for empty query
+  }
+
+  const q = query.toLowerCase().trim();
+  const words = q.split(/\s+/).filter(w => w.length > 0);
+
+  let score = 0;
+
+  // Title match (weight: 3)
+  const titleLower = prompt.title.toLowerCase();
+  words.forEach(word => {
+    if (titleLower.includes(word)) {
+      score += 3;
     }
-}
+  });
 
-function applyImprovement() {
-    if (improvedContent) {
-        document.getElementById('promptContent').value = improvedContent;
-        document.getElementById('aiImprovement').style.display = 'none';
-        improvedContent = null;
+  // Tags match (weight: 2)
+  const tags = prompt.metadata?.tags || [];
+  tags.forEach(tag => {
+    words.forEach(word => {
+      if (tag.toLowerCase().includes(word)) {
+        score += 2;
+      }
+    });
+  });
+
+  // Description match (weight: 1)
+  const descLower = (prompt.description || '').toLowerCase();
+  words.forEach(word => {
+    if (descLower.includes(word)) {
+      score += 1;
     }
+  });
+
+  // Content match (weight: 1)
+  const contentLower = prompt.content.toLowerCase();
+  words.forEach(word => {
+    if (contentLower.includes(word)) {
+      score += 1;
+    }
+  });
+
+  // Expand with synonyms
+  words.forEach(word => {
+    Object.entries(TAG_SYNONYMS).forEach(([canonical, synonyms]) => {
+      if (synonyms.includes(word) && titleLower.includes(canonical)) {
+        score += 2; // Bonus for synonym match
+      }
+    });
+  });
+
+  return score;
 }
 
-// Modal management
-function showAddPromptModal() {
-    document.getElementById('modalTitle').textContent = 'Create New Prompt';
-    document.getElementById('promptModal').style.display = 'flex';
-    document.getElementById('promptTitle').value = '';
-    document.getElementById('promptDescription').value = '';
-    document.getElementById('promptContent').value = '';
-    document.getElementById('aiImprovement').style.display = 'none';
-    editingPromptId = null;
-    improvedContent = null;
+function searchPrompts(query, filters = {}) {
+  let results = prompts.map(p => ({ ...p, score: scorePrompt(p, query) }));
+
+  // Apply filters
+  if (filters.type) {
+    results = results.filter(p => p.metadata?.type === filters.type);
+  }
+  if (filters.subtype) {
+    results = results.filter(p => p.metadata?.subtype === filters.subtype);
+  }
+  if (filters.tags && filters.tags.length > 0) {
+    results = results.filter(p => {
+      const promptTags = p.metadata?.tags || [];
+      return filters.tags.some(tag => promptTags.includes(tag));
+    });
+  }
+
+  // Filter out zero scores (no match)
+  results = results.filter(r => r.score > 0);
+
+  // Sort by score DESC
+  results.sort((a, b) => b.score - a.score);
+
+  return results;
 }
 
-// Modal management
-function hidePromptModal() {
-    document.getElementById('promptModal').style.display = 'none';
-    improvedContent = null;
+// ============================================================================
+// FILTERING SYSTEM (Task 1.9)
+// ============================================================================
+
+function applyFilters() {
+  const query = document.getElementById('searchInput')?.value || '';
+  const typeFilter = document.getElementById('filterType')?.value || '';
+  const activeTags = getActiveTagFilters();
+
+  const filters = {
+    type: typeFilter || undefined,
+    tags: activeTags
+  };
+
+  const results = searchPrompts(query, filters);
+  renderPrompts(results);
 }
 
-// Prompt management
+function getActiveTagFilters() {
+  return Array.from(document.querySelectorAll('.tag-pill.active'))
+    .map(pill => pill.dataset.tag);
+}
+
+function renderTagFilters() {
+  const container = document.getElementById('tagFilters');
+  if (!container) return;
+
+  // Extract all unique tags from prompts
+  const allTags = new Set();
+  prompts.forEach(p => {
+    (p.metadata?.tags || []).forEach(tag => allTags.add(tag));
+  });
+
+  if (allTags.size === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = Array.from(allTags).slice(0, 20).map(tag => `
+    <span class="tag-pill" data-tag="${tag}" onclick="toggleTagFilter('${tag}')">
+      ${tag}
+    </span>
+  `).join('');
+}
+
+function toggleTagFilter(tag) {
+  const pill = document.querySelector(`[data-tag="${tag}"]`);
+  if (pill) {
+    pill.classList.toggle('active');
+    applyFilters();
+  }
+}
+
+// ============================================================================
+// BACKWARD COMPATIBILITY (Task 1.7)
+// ============================================================================
+
+function migrateLegacyPrompt(prompt) {
+  if (!prompt.schemaVersion || prompt.schemaVersion < 2) {
+    // Old prompt without metadata
+    return {
+      ...prompt,
+      schemaVersion: 2,
+      metadata: {
+        type: prompt.type || detectTypeFromContent(prompt.content) || 'uncategorized',
+        subtype: prompt.subtype || 'other',
+        tags: prompt.tags || [],
+        confidence: 1.0, // Manual entry
+        attributes: prompt.attributes || {}
+      }
+    };
+  }
+  return prompt;
+}
+
+function generateUniqueId() {
+  return 'prompt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// ============================================================================
+// SAVE FUNCTION (Task 1.7 - CRITICAL)
+// ============================================================================
+
 async function savePrompt() {
-    const title = document.getElementById('promptTitle').value;
-    const description = document.getElementById('promptDescription').value;
-    const content = document.getElementById('promptContent').value;
-    const category = document.getElementById('promptCategory').value;
+  const title = document.getElementById('promptTitle').value;
+  const description = document.getElementById('promptDescription').value;
+  const content = document.getElementById('promptContent').value;
 
-    if (!title || !content) {
-        showToast('Please fill in all required fields', 'error');
-        return;
+  if (!title || !content) {
+    showToast('Please fill in title and content', 'error');
+    return;
+  }
+
+  showLoading();
+  try {
+    // Build metadata from form
+    const type = document.getElementById('metaType').value;
+    const subtype = document.getElementById('metaSubtype').value;
+    const tags = document.getElementById('metaTags').value
+      .split(',')
+      .map(t => normalizeTag(t))
+      .filter(t => t)
+      .slice(0, 8);
+
+    const attributes = collectAttributesFromForm();
+
+    // Build prompt object
+    const prompt = {
+      schemaVersion: 2,
+      id: editingPromptId || generateUniqueId(),
+      title,
+      description,
+      content,
+      metadata: {
+        type,
+        subtype,
+        tags,
+        confidence: currentMetadata?.confidence || 1.0,
+        attributes
+      },
+      created: editingPromptId
+        ? prompts.find(p => p.id === editingPromptId)?.created || new Date().toISOString()
+        : new Date().toISOString(),
+      updated: new Date().toISOString(),
+      usage_count: editingPromptId
+        ? (prompts.find(p => p.id === editingPromptId)?.usage_count || 0)
+        : 0
+    };
+
+    // Validate before save (defense in depth)
+    prompt.metadata = validateAndRepair(prompt.metadata);
+
+    // Save to storage
+    if (editingPromptId) {
+      const index = prompts.findIndex(p => p.id === editingPromptId);
+      prompts[index] = { ...prompts[index], ...prompt };
+    } else {
+      prompts.unshift(prompt);
     }
 
-    showLoading();
-    try {
-        const prompt = {
-            id: editingPromptId || Date.now().toString(),
-            title,
-            description,
-            content,
-            category,
-            created: editingPromptId ? undefined : new Date().toISOString(),
-            updated: new Date().toISOString()
-        };
+    await puter.kv.set('prompts', JSON.stringify(prompts));
 
-        if (editingPromptId) {
-            const index = prompts.findIndex(p => p.id === editingPromptId);
-            prompts[index] = { ...prompts[index], ...prompt };
-        } else {
-            prompts.unshift(prompt);
-        }
-
-        await puter.kv.set('prompts', JSON.stringify(prompts));
-        hidePromptModal();
-        renderPrompts();
-        showToast('Prompt saved successfully!', 'success');
-    } catch (error) {
-        console.error('Error saving prompt:', error);
-        showToast('Error saving prompt. Please try again.', 'error');
-    } finally {
-        hideLoading();
-    }
+    hidePromptModal();
+    renderPrompts();
+    renderTagFilters();
+    showToast('Prompt saved successfully!', 'success');
+  } catch (error) {
+    console.error('Error saving prompt:', error);
+    showToast('Error saving prompt. Please try again.', 'error');
+  } finally {
+    hideLoading();
+  }
 }
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+async function initApp() {
+  showLoading();
+  try {
+    const storedPrompts = await puter.kv.get('prompts');
+    if (storedPrompts) {
+      prompts = JSON.parse(storedPrompts).map(migrateLegacyPrompt);
+    }
+    renderPrompts();
+    renderTagFilters();
+  } catch (error) {
+    console.error('Error initializing app:', error);
+    showToast('Error loading prompts', 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+// ============================================================================
+// RENDER PROMPTS
+// ============================================================================
+
+function renderPrompts(results = null) {
+  const grid = document.getElementById('promptsGrid');
+  if (!grid) {
+    console.error('Error: promptsGrid element not found');
+    return;
+  }
+
+  const dataToRender = results || prompts;
+
+  grid.innerHTML = dataToRender.length > 0 ? dataToRender.map(prompt => {
+    const metadata = prompt.metadata || {};
+    const typeIcon = metadata.type === 'image' ? '📷' : metadata.type === 'video' ? '🎬' : metadata.type === 'code' ? '💻' : '❓';
+    const tagsHtml = (metadata.tags || []).map(tag => `<span class="tag-badge">${tag}</span>`).join('');
+    
+    return `
+      <div class="prompt-card">
+        <div class="prompt-header">
+          <div class="prompt-type-badge">${typeIcon} ${metadata.type || 'unknown'}</div>
+          ${prompt.score !== undefined && prompt.score > 0 ? `<span class="score-badge">Score: ${prompt.score}</span>` : ''}
+        </div>
+        <div class="prompt-title">${prompt.title}</div>
+        <div class="prompt-description">${prompt.description || ''}</div>
+        <div class="prompt-content">${prompt.content}</div>
+        <div class="prompt-tags">${tagsHtml}</div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="copyPrompt('${prompt.id}')">Copy</button>
+          <button class="btn btn-secondary" onclick="editPrompt('${prompt.id}')">Edit</button>
+          <button class="btn btn-danger" onclick="deletePrompt('${prompt.id}')">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('') : '<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">No prompts found</p>';
+}
+
+// ============================================================================
+// PROMPT MANAGEMENT
+// ============================================================================
 
 async function deletePrompt(id) {
-    if (!confirm('Are you sure you want to delete this prompt?')) return;
+  if (!confirm('Are you sure you want to delete this prompt?')) return;
 
-    showLoading();
-    try {
-        prompts = prompts.filter(p => p.id !== id);
-        await puter.kv.set('prompts', JSON.stringify(prompts));
-        renderPrompts();
-        showToast('Prompt deleted successfully!', 'success');
-    } catch (error) {
-        console.error('Error deleting prompt:', error);
-        showToast('Error deleting prompt. Please try again.', 'error');
-    } finally {
-        hideLoading();
-    }
+  showLoading();
+  try {
+    prompts = prompts.filter(p => p.id !== id);
+    await puter.kv.set('prompts', JSON.stringify(prompts));
+    renderPrompts();
+    renderTagFilters();
+    showToast('Prompt deleted successfully!', 'success');
+  } catch (error) {
+    console.error('Error deleting prompt:', error);
+    showToast('Error deleting prompt. Please try again.', 'error');
+  } finally {
+    hideLoading();
+  }
 }
 
 function editPrompt(id) {
-    const prompt = prompts.find(p => p.id === id);
-    if (!prompt) return;
+  const prompt = prompts.find(p => p.id === id);
+  if (!prompt) return;
 
-    editingPromptId = id;
-    document.getElementById('modalTitle').textContent = 'Edit Prompt';
-    document.getElementById('promptTitle').value = prompt.title;
-    document.getElementById('promptDescription').value = prompt.description || '';
-    document.getElementById('promptContent').value = prompt.content;
-    document.getElementById('promptCategory').value = prompt.category;
-    document.getElementById('aiImprovement').style.display = 'none';
-    document.getElementById('promptModal').style.display = 'flex';
+  editingPromptId = id;
+  currentMetadata = prompt.metadata || null;
+
+  document.getElementById('modalTitle').textContent = 'Edit Prompt';
+  document.getElementById('promptTitle').value = prompt.title;
+  document.getElementById('promptDescription').value = prompt.description || '';
+  document.getElementById('promptContent').value = prompt.content;
+  
+  // Set metadata fields
+  const metadata = prompt.metadata || {};
+  document.getElementById('metaType').value = metadata.type || 'uncategorized';
+  updateSubtypeOptions(metadata.type || 'uncategorized');
+  document.getElementById('metaSubtype').value = metadata.subtype || 'other';
+  document.getElementById('metaTags').value = (metadata.tags || []).join(', ');
+  renderAttributes(metadata.attributes || {});
+  
+  // Set confidence
+  if (metadata.confidence) {
+    updateConfidenceIndicator(metadata.confidence);
+  }
+
+  document.getElementById('aiImprovement').style.display = 'none';
+  document.getElementById('promptModal').style.display = 'flex';
 }
 
 async function copyPrompt(id) {
-    const prompt = prompts.find(p => p.id === id);
-    if (!prompt) return;
+  const prompt = prompts.find(p => p.id === id);
+  if (!prompt) return;
 
-    try {
-        await navigator.clipboard.writeText(prompt.content);
-        showToast('Prompt copied to clipboard!', 'success');
-    } catch (error) {
-        console.error('Error copying to clipboard:', error);
-        showToast('Error copying to clipboard. Please try again.', 'error');
-    }
+  try {
+    await navigator.clipboard.writeText(prompt.content);
+    showToast('Prompt copied to clipboard!', 'success');
+  } catch (error) {
+    console.error('Error copying to clipboard:', error);
+    showToast('Error copying to clipboard. Please try again.', 'error');
+  }
 }
 
-// Utility functions
+// ============================================================================
+// MODAL MANAGEMENT
+// ============================================================================
+
+function showAddPromptModal() {
+  document.getElementById('modalTitle').textContent = 'Create New Prompt';
+  document.getElementById('promptModal').style.display = 'flex';
+  document.getElementById('promptTitle').value = '';
+  document.getElementById('promptDescription').value = '';
+  document.getElementById('promptContent').value = '';
+  document.getElementById('metaType').value = 'uncategorized';
+  updateSubtypeOptions('uncategorized');
+  document.getElementById('metaSubtype').value = 'other';
+  document.getElementById('metaTags').value = '';
+  document.getElementById('attributesContainer').innerHTML = '';
+  document.getElementById('aiImprovement').style.display = 'none';
+  editingPromptId = null;
+  improvedContent = null;
+  currentMetadata = null;
+  updateConfidenceIndicator(1.0);
+  hideReviewWarning();
+}
+
+function hidePromptModal() {
+  document.getElementById('promptModal').style.display = 'none';
+  improvedContent = null;
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
 function showLoading() {
-    document.getElementById('loading').style.display = 'flex';
+  document.getElementById('loading').style.display = 'flex';
 }
 
 function hideLoading() {
-    document.getElementById('loading').style.display = 'none';
+  document.getElementById('loading').style.display = 'none';
 }
 
 function showToast(message, type = 'success') {
-    const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.style.background = type === 'success' ? 'var(--success)' : 'var(--danger)';
-    toast.style.display = 'block';
-    setTimeout(() => {
-        toast.style.display = 'none';
-    }, 3000);
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.style.background = type === 'success' ? 'var(--success)' : 'var(--danger)';
+  toast.style.display = 'block';
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 3000);
 }
 
-// Event listeners
-document.querySelector('.search-box').addEventListener('input', renderPrompts);
+// ============================================================================
+// EVENT LISTENERS
+// ============================================================================
 
-document.querySelector('nav').addEventListener('click', (e) => {
-    if (e.target.classList.contains('nav-item')) {
+document.addEventListener('DOMContentLoaded', () => {
+  // Search input
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => applyFilters());
+  }
+
+  // Type filter
+  const filterType = document.getElementById('filterType');
+  if (filterType) {
+    filterType.addEventListener('change', () => applyFilters());
+  }
+
+  // Navigation
+  const nav = document.querySelector('nav');
+  if (nav) {
+    nav.addEventListener('click', (e) => {
+      if (e.target.classList.contains('nav-item')) {
         document.querySelectorAll('.nav-item').forEach(item => {
-            item.classList.remove('active');
+          item.classList.remove('active');
         });
         e.target.classList.add('active');
         currentCategory = e.target.dataset.category;
-        renderPrompts();
-    }
+        
+        // Filter by category (legacy support)
+        if (currentCategory === 'all') {
+          renderPrompts();
+        } else {
+          const filtered = prompts.filter(p => p.category === currentCategory);
+          renderPrompts(filtered);
+        }
+      }
+    });
+  }
+
+  // Type select change - update subtypes
+  const metaType = document.getElementById('metaType');
+  if (metaType) {
+    metaType.addEventListener('change', (e) => {
+      updateSubtypeOptions(e.target.value);
+    });
+  }
 });
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', initApp);
+
+// ============================================================================
+// TEST SUITE (Task 1.11)
+// ============================================================================
+
+const TEST_PROMPTS = [
+  // Image prompts
+  {
+    content: "A portrait shot of a woman sitting by the window during golden hour, soft natural lighting, shallow depth of field",
+    expectedType: 'image',
+    expectedSubtype: 'portrait',
+    expectedTags: ['portrait', 'golden hour', 'natural lighting']
+  },
+  {
+    content: "Landscape photography of mountains at sunrise, misty valley, wide angle shot",
+    expectedType: 'image',
+    expectedSubtype: 'landscape',
+    expectedTags: ['landscape', 'mountains', 'sunrise']
+  },
+  {
+    content: "Product photography of a watch on white background, studio lighting",
+    expectedType: 'image',
+    expectedSubtype: 'product',
+    expectedTags: ['product', 'studio lighting']
+  },
+  {
+    content: "Macro shot of a butterfly on a flower, extreme closeup",
+    expectedType: 'image',
+    expectedSubtype: 'macro',
+    expectedTags: ['macro', 'butterfly', 'nature']
+  },
+  {
+    content: "Street photography in Tokyo at night, neon lights, rainy streets",
+    expectedType: 'image',
+    expectedSubtype: 'street',
+    expectedTags: ['street', 'night', 'tokyo']
+  },
+  // Code prompts
+  {
+    content: "Write a Python function that calculates fibonacci sequence using recursion",
+    expectedType: 'code',
+    expectedSubtype: 'function',
+    expectedTags: ['python', 'function', 'fibonacci', 'recursion']
+  },
+  {
+    content: "Create a React component with useState hook for a todo list",
+    expectedType: 'code',
+    expectedSubtype: 'component',
+    expectedTags: ['react', 'component', 'hooks', 'todo']
+  },
+  {
+    content: "Write a SQL query to get all users who ordered in the last 30 days",
+    expectedType: 'code',
+    expectedSubtype: 'query',
+    expectedTags: ['sql', 'query', 'database']
+  },
+  {
+    content: "Create a Node.js Express API endpoint for user authentication",
+    expectedType: 'code',
+    expectedSubtype: 'api',
+    expectedTags: ['nodejs', 'express', 'api', 'authentication']
+  },
+  {
+    content: "Write a bash script to backup files to a remote server",
+    expectedType: 'code',
+    expectedSubtype: 'script',
+    expectedTags: ['bash', 'script', 'backup']
+  },
+  // Video prompts
+  {
+    content: "A timelapse video of a sunset over the mountains, clouds moving quickly",
+    expectedType: 'video',
+    expectedSubtype: 'timelapse',
+    expectedTags: ['timelapse', 'sunset', 'mountains']
+  },
+  {
+    content: "Interview setup with soft lighting, two people talking",
+    expectedType: 'video',
+    expectedSubtype: 'interview',
+    expectedTags: ['interview', 'lighting']
+  },
+  {
+    content: "B-roll footage of someone typing on a laptop in a coffee shop",
+    expectedType: 'video',
+    expectedSubtype: 'b-roll',
+    expectedTags: ['b-roll', 'coffee shop', 'laptop']
+  },
+  {
+    content: "Tutorial video showing how to use Photoshop layers",
+    expectedType: 'video',
+    expectedSubtype: 'tutorial',
+    expectedTags: ['tutorial', 'photoshop']
+  },
+  // Ambiguous prompts
+  {
+    content: "Create something beautiful",
+    expectedType: 'uncategorized',
+    expectedSubtype: 'other',
+    expectedTags: []
+  },
+  {
+    content: "Hello world",
+    expectedType: 'uncategorized',
+    expectedSubtype: 'other',
+    expectedTags: []
+  }
+];
+
+async function runTestSuite() {
+  let passed = 0;
+  let failed = 0;
+
+  console.log('=== Running Test Suite ===\n');
+
+  for (let index = 0; index < TEST_PROMPTS.length; index++) {
+    const test = TEST_PROMPTS[index];
+    try {
+      const result = await extractMetadataWithFallback(test.content, '', '');
+      const typeMatch = result.type === test.expectedType;
+      const subtypeMatch = result.subtype === test.expectedSubtype;
+
+      if (typeMatch && subtypeMatch) {
+        passed++;
+        console.log(`✅ Test ${index + 1}: PASS (${result.type}/${result.subtype})`);
+      } else {
+        failed++;
+        console.log(`❌ Test ${index + 1}: FAIL`);
+        console.log('  Expected:', test.expectedType, test.expectedSubtype);
+        console.log('  Got:', result.type, result.subtype);
+      }
+    } catch (error) {
+      failed++;
+      console.log(`❌ Test ${index + 1}: ERROR`, error);
+    }
+  }
+
+  const accuracy = (passed / TEST_PROMPTS.length) * 100;
+  console.log('\n=== Test Results ===');
+  console.log(`Passed: ${passed}/${TEST_PROMPTS.length}`);
+  console.log(`Accuracy: ${accuracy.toFixed(1)}%`);
+  console.log(`Target: 70-80%`);
+
+  return { passed, failed, accuracy };
+}
+
+// Export for console testing
+window.runTestSuite = runTestSuite;
+window.normalizeAIResponse = normalizeAIResponse;
+window.validateAndRepair = validateAndRepair;
+window.METADATA_SCHEMA = METADATA_SCHEMA;
+window.SUBTYPE_REGISTRY = SUBTYPE_REGISTRY;
+window.TAG_SYNONYMS = TAG_SYNONYMS;
