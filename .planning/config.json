@@ -1,0 +1,43 @@
+{
+  "project_name": "puter-prompt-craft",
+  "version": "2.0.0",
+  "workflow": {
+    "type": "brownfield",
+    "platform": "puter.com",
+    "auto_commit": true,
+    "branch": "main"
+  },
+  "ui_preferences": {
+    "theme": "dark",
+    "accent_color": "purple",
+    "style": "modern-professional"
+  },
+  "ai_integration": {
+    "provider": "puter.ai.chat",
+    "purpose": "categorization_and_metadata_extraction",
+    "features": [
+      "auto_categorization",
+      "metadata_extraction",
+      "smart_search"
+    ]
+  },
+  "metadata_schema": {
+    "root_fields": ["id", "type", "subtype", "tags", "created", "usage_count"],
+    "type_values": ["image", "video", "code"],
+    "nested_objects": {
+      "camera": ["angle", "shot_type", "lens", "movement"],
+      "subject": ["pose", "orientation", "framing", "expression"],
+      "setting": ["location", "lighting", "time", "background"]
+    }
+  },
+  "storage": {
+    "primary": "puter.kv",
+    "export_format": "markdown_with_yaml_frontmatter",
+    "backup": "puter.fs"
+  },
+  "search": {
+    "full_text": true,
+    "by_metadata": true,
+    "filters": ["type", "subtype", "tags", "camera", "subject", "setting"]
+  }
+}
