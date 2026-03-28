@@ -231,9 +231,15 @@ Remember: Return ONLY JSON, no other text.`;
   try {
     console.log('🔄 [extractAllWithAI] Calling Puter.AI...');
     const response = await puter.ai.chat(systemPrompt);
-    console.log('✅ [extractAllWithAI] Puter.AI responded:', response.substring(0, 200));
+    
+    // Extract text from response object (Puter.AI returns an object, not string)
+    const responseText = typeof response === 'object' 
+      ? (response.message?.content || response.content || JSON.stringify(response))
+      : response;
+    
+    console.log('✅ [extractAllWithAI] Puter.AI responded:', responseText.substring(0, 200));
 
-    const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const cleaned = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     console.log('🧹 [extractAllWithAI] Cleaned response:', cleaned.substring(0, 200));
     
     const parsed = JSON.parse(cleaned);
@@ -295,7 +301,13 @@ Content: ${content}
 Remember: Return ONLY JSON, no other text.`;
 
   const response = await puter.ai.chat(systemPrompt);
-  return response;
+  
+  // Extract text from response object (Puter.AI returns an object, not string)
+  const responseText = typeof response === 'object' 
+    ? (response.message?.content || response.content || JSON.stringify(response))
+    : response;
+  
+  return responseText;
 }
 
 function detectTypeFromContent(content) {
