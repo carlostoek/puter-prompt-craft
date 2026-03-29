@@ -1,7 +1,11 @@
+
 <!DOCTYPE html>
 <html>
 <head>
     <title>PromptCraft Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script src="https://js.puter.com/v2/"></script>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -44,8 +48,10 @@
     <!-- Modal -->
     <div class="modal" id="promptModal">
         <div class="modal-content">
+            <div class="modal-drag-handle"></div>
             <div class="modal-header">
                 <div class="modal-title" id="modalTitle">Create New Prompt</div>
+                <button class="modal-close-btn" onclick="hidePromptModal()">✕</button>
             </div>
 
             <!-- Single Input Field: Prompt Content -->
@@ -105,6 +111,42 @@
         <div class="loading-spinner"></div>
     </div>
 
+
+    <!-- FAB (mobile only) -->
+    <button class="fab" onclick="showAddPromptModal()" aria-label="New Prompt">+</button>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="mobile-nav" id="mobileNav">
+        <div class="mobile-nav-item active" data-type="" onclick="setMobileFilter(this, '')">
+            <span class="mobile-nav-icon">🏠</span>
+            <span class="mobile-nav-label">All</span>
+        </div>
+        <div class="mobile-nav-item" data-type="image" onclick="setMobileFilter(this, 'image')">
+            <span class="mobile-nav-icon">📷</span>
+            <span class="mobile-nav-label">Image</span>
+        </div>
+        <div class="mobile-nav-item" data-type="video" onclick="setMobileFilter(this, 'video')">
+            <span class="mobile-nav-icon">🎬</span>
+            <span class="mobile-nav-label">Video</span>
+        </div>
+        <div class="mobile-nav-item" data-type="code" onclick="setMobileFilter(this, 'code')">
+            <span class="mobile-nav-icon">💻</span>
+            <span class="mobile-nav-label">Code</span>
+        </div>
+        <div class="mobile-nav-item" data-type="uncategorized" onclick="setMobileFilter(this, 'uncategorized')">
+            <span class="mobile-nav-icon">❓</span>
+            <span class="mobile-nav-label">Other</span>
+        </div>
+    </nav>
+
+    <script>
+        function setMobileFilter(el, type) {
+            document.getElementById('filterType').value = type;
+            document.querySelectorAll('.mobile-nav-item').forEach(item => item.classList.remove('active'));
+            el.classList.add('active');
+            if (typeof applyFilters === 'function') applyFilters();
+        }
+    </script>
 
     <script src="main.js"></script>
 </body>
