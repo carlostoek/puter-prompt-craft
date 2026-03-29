@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Phase:** 1 Complete ✅
+**Phase:** 2 Complete ✅
 **Last Updated:** 2026-03-28
 
 ---
@@ -12,7 +12,7 @@
 | Phase | Status | Started | Completed | Notes |
 |-------|--------|---------|-----------|-------|
 | 1 - Foundation | ✅ Complete | 2026-03-28 | 2026-03-28 | Metadata schema v2, AI extraction, normalization, validation, search, filtering |
-| 2 - Search | ⏳ Pending | - | - | Advanced filtering |
+| 2 - Advanced Search | ✅ Complete | 2026-03-28 | 2026-03-28 | Advanced filtering UI, camera/subject/setting filters, results counter |
 | 3 - Export/Import | ⏳ Pending | - | - | Markdown support |
 | 4 - Polish | ⏳ Pending | - | - | Production ready |
 

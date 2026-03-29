@@ -573,7 +573,7 @@ function scorePrompt(prompt, query) {
 function searchPrompts(query, filters = {}) {
   let results = prompts.map(p => ({ ...p, score: scorePrompt(p, query) }));
 
-  // Apply filters
+  // Apply basic filters
   if (filters.type) {
     results = results.filter(p => p.metadata?.type === filters.type);
   }
@@ -587,8 +587,54 @@ function searchPrompts(query, filters = {}) {
     });
   }
 
-  // Filter out zero scores (no match)
-  results = results.filter(r => r.score > 0);
+  // Apply advanced filters (Phase 2)
+  if (filters.advanced) {
+    const adv = filters.advanced;
+
+    // Camera filters
+    if (adv.angle) {
+      results = results.filter(p => p.metadata?.attributes?.angle === adv.angle);
+    }
+    if (adv.shot_type) {
+      results = results.filter(p => p.metadata?.attributes?.shot_type === adv.shot_type);
+    }
+    if (adv.lens) {
+      results = results.filter(p => p.metadata?.attributes?.lens === adv.lens);
+    }
+
+    // Subject filters
+    if (adv.pose) {
+      results = results.filter(p => {
+        const promptPose = p.metadata?.attributes?.pose || '';
+        return promptPose.toLowerCase().includes(adv.pose.toLowerCase());
+      });
+    }
+    if (adv.orientation) {
+      results = results.filter(p => p.metadata?.attributes?.orientation === adv.orientation);
+    }
+    if (adv.framing) {
+      results = results.filter(p => p.metadata?.attributes?.framing === adv.framing);
+    }
+
+    // Setting filters
+    if (adv.location) {
+      results = results.filter(p => {
+        const promptLocation = p.metadata?.attributes?.location || '';
+        return promptLocation.toLowerCase().includes(adv.location.toLowerCase());
+      });
+    }
+    if (adv.lighting) {
+      results = results.filter(p => p.metadata?.attributes?.lighting === adv.lighting);
+    }
+    if (adv.time) {
+      results = results.filter(p => p.metadata?.attributes?.time === adv.time);
+    }
+  }
+
+  // Filter out zero scores (no match) - only if there's a query
+  if (query && query.trim() !== '') {
+    results = results.filter(r => r.score > 0);
+  }
 
   // Sort by score DESC
   results.sort((a, b) => b.score - a.score);
@@ -597,21 +643,118 @@ function searchPrompts(query, filters = {}) {
 }
 
 // ============================================================================
-// FILTERING SYSTEM (Task 1.9)
+// FILTERING SYSTEM (Task 1.9 + Phase 2 Advanced Filters)
 // ============================================================================
 
 function applyFilters() {
+  applyAdvancedFilters();
+}
+
+function applyAdvancedFilters() {
   const query = document.getElementById('searchInput')?.value || '';
   const typeFilter = document.getElementById('filterType')?.value || '';
   const activeTags = getActiveTagFilters();
 
+  // Advanced filters (Phase 2)
+  const advancedFilters = {
+    // Camera filters
+    angle: document.getElementById('filterAngle')?.value || '',
+    shot_type: document.getElementById('filterShotType')?.value || '',
+    lens: document.getElementById('filterLens')?.value || '',
+    // Subject filters
+    pose: document.getElementById('filterPose')?.value || '',
+    orientation: document.getElementById('filterOrientation')?.value || '',
+    framing: document.getElementById('filterFraming')?.value || '',
+    // Setting filters
+    location: document.getElementById('filterLocation')?.value || '',
+    lighting: document.getElementById('filterLighting')?.value || '',
+    time: document.getElementById('filterTime')?.value || ''
+  };
+
   const filters = {
     type: typeFilter || undefined,
-    tags: activeTags
+    tags: activeTags,
+    advanced: advancedFilters
   };
 
   const results = searchPrompts(query, filters);
   renderPrompts(results);
+  updateResultsCounter(results);
+  updateClearFiltersButton();
+}
+
+function updateResultsCounter(results) {
+  const counter = document.getElementById('resultsCounter');
+  if (!counter) return;
+  counter.textContent = `${results.length} of ${prompts.length} prompts`;
+}
+
+function updateClearFiltersButton() {
+  const btn = document.getElementById('clearFiltersBtn');
+  if (!btn) return;
+
+  const hasFilters = hasActiveFilters();
+  btn.style.display = hasFilters ? 'inline-flex' : 'none';
+}
+
+function hasActiveFilters() {
+  // Check basic filters
+  const typeFilter = document.getElementById('filterType')?.value || '';
+  const query = document.getElementById('searchInput')?.value || '';
+  const activeTags = getActiveTagFilters();
+
+  if (typeFilter || query || activeTags.length > 0) return true;
+
+  // Check advanced filters
+  const advancedFilters = [
+    'filterAngle', 'filterShotType', 'filterLens',
+    'filterPose', 'filterOrientation', 'filterFraming',
+    'filterLocation', 'filterLighting', 'filterTime'
+  ];
+
+  return advancedFilters.some(id => {
+    const el = document.getElementById(id);
+    return el && el.value && el.value.trim() !== '';
+  });
+}
+
+function clearAllFilters() {
+  // Clear basic filters
+  const searchInput = document.getElementById('searchInput');
+  const filterType = document.getElementById('filterType');
+  if (searchInput) searchInput.value = '';
+  if (filterType) filterType.value = '';
+
+  // Clear tag filters
+  document.querySelectorAll('.tag-pill.active').forEach(pill => {
+    pill.classList.remove('active');
+  });
+
+  // Clear advanced filters
+  const advancedFilters = [
+    'filterAngle', 'filterShotType', 'filterLens',
+    'filterPose', 'filterOrientation', 'filterFraming',
+    'filterLocation', 'filterLighting', 'filterTime'
+  ];
+
+  advancedFilters.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  // Re-render
+  renderPrompts();
+  updateResultsCounter(prompts);
+  updateClearFiltersButton();
+  showToast('All filters cleared', 'success');
+}
+
+function toggleFilterSection(sectionId) {
+  const content = document.getElementById(sectionId);
+  const header = content?.parentElement;
+  if (header) {
+    header.classList.toggle('collapsed');
+  }
 }
 
 function getActiveTagFilters() {
@@ -631,14 +774,35 @@ function renderTagFilters() {
 
   if (allTags.size === 0) {
     container.innerHTML = '';
-    return;
+  } else {
+    container.innerHTML = Array.from(allTags).slice(0, 20).map(tag => `
+      <span class="tag-pill" data-tag="${tag}" onclick="toggleTagFilter('${tag}')">
+        ${tag}
+      </span>
+    `).join('');
   }
 
-  container.innerHTML = Array.from(allTags).slice(0, 20).map(tag => `
-    <span class="tag-pill" data-tag="${tag}" onclick="toggleTagFilter('${tag}')">
-      ${tag}
-    </span>
-  `).join('');
+  // Populate location suggestions (Phase 2)
+  populateLocationSuggestions();
+}
+
+function populateLocationSuggestions() {
+  const container = document.getElementById('locationSuggestions');
+  if (!container) return;
+
+  const locations = new Set();
+  prompts.forEach(p => {
+    const location = p.metadata?.attributes?.location;
+    if (location) locations.add(location);
+  });
+
+  if (locations.size === 0) {
+    container.innerHTML = '';
+  } else {
+    container.innerHTML = Array.from(locations).map(loc =>
+      `<option value="${loc}">`
+    ).join('');
+  }
 }
 
 function toggleTagFilter(tag) {
@@ -753,6 +917,8 @@ async function initApp() {
     }
     renderPrompts();
     renderTagFilters();
+    updateResultsCounter(prompts);
+    updateClearFiltersButton();
   } catch (error) {
     console.error('Error initializing app:', error);
     showToast('Error loading prompts', 'error');

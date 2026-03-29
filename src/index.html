@@ -22,14 +22,131 @@
                 <div class="nav-item" data-category="business">Business</div>
                 <div class="nav-item" data-category="academic">Academic</div>
             </nav>
+
+            <!-- Advanced Filters Section (Phase 2) -->
+            <div class="filter-section">
+                <div class="filter-section-header" onclick="toggleFilterSection('cameraFilters')">
+                    <span>📷 Camera</span>
+                    <span class="filter-section-toggle" id="cameraFiltersToggle">▼</span>
+                </div>
+                <div class="filter-section-content" id="cameraFilters">
+                    <div class="filter-group">
+                        <label class="filter-label">Angle</label>
+                        <select id="filterAngle" class="filter-select" onchange="applyAdvancedFilters()">
+                            <option value="">Any Angle</option>
+                            <option value="high-angle">High Angle</option>
+                            <option value="low-angle">Low Angle</option>
+                            <option value="eye-level">Eye Level</option>
+                            <option value="bird-eye">Bird's Eye</option>
+                            <option value="worm-eye">Worm's Eye</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Shot Type</label>
+                        <select id="filterShotType" class="filter-select" onchange="applyAdvancedFilters()">
+                            <option value="">Any Shot Type</option>
+                            <option value="close-up">Close-up</option>
+                            <option value="medium">Medium Shot</option>
+                            <option value="long">Long Shot</option>
+                            <option value="extreme-close-up">Extreme Close-up</option>
+                            <option value="full-body">Full Body</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Lens</label>
+                        <select id="filterLens" class="filter-select" onchange="applyAdvancedFilters()">
+                            <option value="">Any Lens</option>
+                            <option value="wide-angle">Wide Angle</option>
+                            <option value="telephoto">Telephoto</option>
+                            <option value="macro">Macro</option>
+                            <option value="standard">Standard</option>
+                            <option value="fisheye">Fisheye</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <div class="filter-section-header" onclick="toggleFilterSection('subjectFilters')">
+                    <span>👤 Subject</span>
+                    <span class="filter-section-toggle" id="subjectFiltersToggle">▼</span>
+                </div>
+                <div class="filter-section-content" id="subjectFilters">
+                    <div class="filter-group">
+                        <label class="filter-label">Pose</label>
+                        <input type="text" id="filterPose" class="filter-input" placeholder="Any pose" oninput="applyAdvancedFilters()" />
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Orientation</label>
+                        <select id="filterOrientation" class="filter-select" onchange="applyAdvancedFilters()">
+                            <option value="">Any Orientation</option>
+                            <option value="facing-camera">Facing Camera</option>
+                            <option value="profile">Profile</option>
+                            <option value="three-quarter">Three Quarter</option>
+                            <option value="back">Back View</option>
+                            <option value="over-shoulder">Over Shoulder</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Framing</label>
+                        <select id="filterFraming" class="filter-select" onchange="applyAdvancedFilters()">
+                            <option value="">Any Framing</option>
+                            <option value="headshot">Headshot</option>
+                            <option value="three-quarter">Three-Quarter</option>
+                            <option value="full-body">Full Body</option>
+                            <option value="cowboy">Cowboy Shot</option>
+                            <option value="extreme-close-up">Extreme Close-up</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <div class="filter-section-header" onclick="toggleFilterSection('settingFilters')">
+                    <span>🌍 Setting</span>
+                    <span class="filter-section-toggle" id="settingFiltersToggle">▼</span>
+                </div>
+                <div class="filter-section-content" id="settingFilters">
+                    <div class="filter-group">
+                        <label class="filter-label">Location</label>
+                        <input type="text" id="filterLocation" class="filter-input" placeholder="Any location" oninput="applyAdvancedFilters()" list="locationSuggestions" />
+                        <datalist id="locationSuggestions"></datalist>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Lighting</label>
+                        <select id="filterLighting" class="filter-select" onchange="applyAdvancedFilters()">
+                            <option value="">Any Lighting</option>
+                            <option value="natural">Natural Light</option>
+                            <option value="studio">Studio Light</option>
+                            <option value="golden-hour">Golden Hour</option>
+                            <option value="blue-hour">Blue Hour</option>
+                            <option value="neon">Neon</option>
+                            <option value="low-key">Low Key</option>
+                            <option value="high-key">High Key</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Time</label>
+                        <select id="filterTime" class="filter-select" onchange="applyAdvancedFilters()">
+                            <option value="">Any Time</option>
+                            <option value="morning">Morning</option>
+                            <option value="afternoon">Afternoon</option>
+                            <option value="evening">Evening</option>
+                            <option value="night">Night</option>
+                            <option value="sunrise">Sunrise</option>
+                            <option value="sunset">Sunset</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
         </aside>
 
         <main class="main">
             <div class="toolbar">
                 <div class="toolbar-left">
-                    <input type="text" class="search-box" placeholder="Search prompts..." id="searchInput">
+                    <input type="text" class="search-box" placeholder="Search prompts..." id="searchInput" oninput="applyAdvancedFilters()">
                     <div class="filters">
-                        <select id="filterType" class="filter-select">
+                        <select id="filterType" class="filter-select" onchange="applyAdvancedFilters()">
                             <option value="">All Types</option>
                             <option value="image">📷 Image</option>
                             <option value="video">🎬 Video</option>
@@ -39,7 +156,11 @@
                         <div id="tagFilters" class="tag-filters"></div>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="showAddPromptModal()">New Prompt</button>
+                <div class="toolbar-right">
+                    <span class="results-counter" id="resultsCounter">0 of 0 prompts</span>
+                    <button class="btn btn-secondary btn-small" id="clearFiltersBtn" onclick="clearAllFilters()" style="display: none;">Clear All Filters</button>
+                    <button class="btn btn-primary" onclick="showAddPromptModal()">New Prompt</button>
+                </div>
             </div>
             <div class="prompts-grid" id="promptsGrid"></div>
         </main>
